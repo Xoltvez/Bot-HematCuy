@@ -33,14 +33,13 @@ app.get('/', async (req, res) => {
 });
 app.listen(port, () => console.log(`Dummy server listening on port ${port}!`));
 
-// KONFIGURASI KEAMANAN
-const ALLOWED_IDS = [
-    '6282234841594@c.us',
-    '213279586689122@lid', // Kode unik khusus milik Anda
-    '6282234841594'
-];
-const API_TOKEN = 'Bearer RAHASIA_HEMATCUY_123';
-const API_URL = 'https://hematcuy.com/api/bot/transaction';
+// KONFIGURASI KEAMANAN DARI ENVIRONMENT VARIABLES
+// Pisahkan nomor dengan koma tanpa spasi, contoh: 628xxx@c.us,628yyy@c.us
+const rawAllowedIds = process.env.ALLOWED_IDS || '';
+const ALLOWED_IDS = rawAllowedIds.split(',');
+
+const API_TOKEN = process.env.API_TOKEN || 'Bearer RAHASIA_HEMATCUY_123';
+const API_URL = process.env.API_URL || 'https://hematcuy.com/api/bot/transaction';
 
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: '.wwebjs_auth_v2' }),
@@ -71,6 +70,22 @@ client.on('ready', () => {
 client.on('message_create', async msg => {
     const text = msg.body || '';
     
+    // DEBUG LOG: Cek apakah bot menangkap pesan apa pun
+    console.log(`[DEBUG] Pesan masuk dari: ${msg.from} ke: ${msg.to} | Teks: ${text}`);
+
+    // Abaikan jika ALLOWED_IDS kosong (berarti belum disetting di Railway)
+    // atau jika pengirim bukan dari daftar yang diizinkan.
+    if (ALLOWED_IDS.length === 0 || ALLOWED_IDS[0] === '') {
+        console.log('Peringatan: ALLOWED_IDS belum disetting di Railway!');
+        return;
+    }
+    
+    const senderId = msg.from;
+    // Tambahkan pengecualian jika dia nge-chat nomornya sendiri
+    if (!ALLOWED_IDS.includes(senderId) && msg.to !== msg.from && !ALLOWED_IDS.includes(msg.to)) {
+        return;
+    }
+
     // KEAMANAN LAPIS 1: Penggunaan Hashtag Sumber Dana (#Bank atau #Tunai)
     const textLower = text.toLowerCase();
     if (!textLower.includes('#bank') && !textLower.includes('#tunai') && !textLower.includes('#cash')) {
