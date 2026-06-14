@@ -1,5 +1,5 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const pino = require('pino');
 const qrcodeImg = require('qrcode');
 const axios = require('axios');
 const express = require('express');
@@ -34,103 +34,106 @@ app.get('/', async (req, res) => {
 app.listen(port, () => console.log(`Dummy server listening on port ${port}!`));
 
 // KONFIGURASI KEAMANAN DARI ENVIRONMENT VARIABLES
-// Pisahkan nomor dengan koma tanpa spasi, contoh: 628xxx@c.us,628yyy@c.us
 const rawAllowedIds = process.env.ALLOWED_IDS || '';
 const ALLOWED_IDS = rawAllowedIds.split(',');
-
 const API_TOKEN = process.env.API_TOKEN || 'Bearer RAHASIA_HEMATCUY_123';
 const API_URL = process.env.API_URL || 'https://hematcuy.com/api/bot/transaction';
 
-const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: '.wwebjs_auth_v2' }),
-    puppeteer: {
-        args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-web-security',
-            '--disable-features=IsolateOrigins,site-per-process'
-        ],
-        protocolTimeout: 300000, // Beri waktu 5 menit karena server gratisan lemot
-        timeout: 0
-    },
-    // Menyamar sebagai browser Google Chrome biasa di Windows 11
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
-});
-
-client.on('qr', (qr) => {
-    latestQr = qr;
-    console.log('============= PERHATIAN =============');
-    console.log('Silakan buka alamat Website aplikasi Railway Anda untuk melihat QR Code yang jelas!');
-    console.log('=====================================');
-    qrcode.generate(qr, {small: true});
-});
-
-client.on('ready', () => {
-    isReady = true;
-    console.log('Client is ready!');
-    console.log('Bot WhatsApp aman berjalan. Menunggu instruksi dari Pemilik.');
-});
-
-client.on('message_create', async msg => {
-    const text = msg.body || '';
+async function connectToWhatsApp () {
+    const { state, saveCreds } = await useMultiFileAuthState('.baileys_auth_info');
     
-    // DEBUG LOG: Cek apakah bot menangkap pesan apa pun
-    console.log(`[DEBUG] Pesan masuk dari: ${msg.from} ke: ${msg.to} | Teks: ${text}`);
+    // Inisialisasi mesin Baileys yang jauh lebih ringan dari Puppeteer
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: false,
+        logger: pino({ level: "silent" }), // Matikan log bawaan yang terlalu panjang
+        browser: ["Bot-HematCuy", "Chrome", "1.0.0"]
+    });
 
-    // Abaikan jika ALLOWED_IDS kosong (berarti belum disetting di Railway)
-    if (ALLOWED_IDS.length === 0 || ALLOWED_IDS[0] === '') {
-        console.log('Peringatan: ALLOWED_IDS belum disetting di Railway!');
-        return;
-    }
-    
-    // CEK KEAMANAN: Bolehkan jika pengirim ada di ALLOWED_IDS, 
-    // ATAU jika dia ngirim pesan ke dirinya sendiri (chat "You")
-    const isAllowedSender = ALLOWED_IDS.includes(msg.from) || ALLOWED_IDS.includes(msg.from.replace('@c.us', ''));
-    const isSelfChat = (msg.to === msg.from);
-    
-    if (!isAllowedSender && !isSelfChat) {
-        return; // Abaikan pesan dari orang tak dikenal
-    }
+    sock.ev.on('creds.update', saveCreds);
 
-    // KEAMANAN LAPIS 1: Penggunaan Hashtag Sumber Dana (#Bank atau #Tunai)
-    const textLower = text.toLowerCase();
-    if (!textLower.includes('#bank') && !textLower.includes('#tunai') && !textLower.includes('#cash')) {
-        return;
-    }
-
-    // Biarkan '#' dikirim ke Laravel agar diproses
-    const cleanText = text.trim();
-
-    console.log(`[DITERIMA] Akses Valid! Pesan: ${cleanText}`);
-
-    if (cleanText.toLowerCase().startsWith('pemasukan') || cleanText.toLowerCase().startsWith('pengeluaran') || cleanText.toLowerCase().startsWith('masuk') || cleanText.toLowerCase().startsWith('keluar')) {
-        try {
-            // KEAMANAN LAPIS 2: Mengirim API Token rahasia ke server Laravel
-            const response = await axios.post(API_URL, {
-                message: cleanText
-            }, {
-                headers: {
-                    'Authorization': API_TOKEN,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (response.data && response.data.success) {
-                msg.reply('✅ ' + response.data.message);
-            }
-        } catch (error) {
-            console.error(error.message);
-            if (error.response && error.response.data && error.response.data.error) {
-                msg.reply('❌ Gagal: ' + error.response.data.error);
-            } else {
-                msg.reply('❌ Terjadi kesalahan saat menghubungi server aplikasi.');
-            }
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect, qr } = update;
+        
+        if (qr) {
+            latestQr = qr;
+            console.log('============= PERHATIAN =============');
+            console.log('Silakan buka alamat Website aplikasi Railway Anda untuk melihat QR Code yang jelas!');
+            console.log('=====================================');
         }
-    } else {
-        msg.reply('🤖 Format tidak dikenali atau tidak ada Hashtag #Bank/#Tunai.\n\nGunakan format:\n*Pemasukan/Pengeluaran* [Nominal] [Judul] #[Bank/Tunai]\n\nContoh:\nPengeluaran 20000 Makan Siang #Bank\nPemasukan 50000 Dikasih Ibu #Tunai');
-    }
-});
 
-client.initialize();
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('Koneksi terputus karena ', lastDisconnect.error, ', mencoba menyambung kembali: ', shouldReconnect);
+            if(shouldReconnect) {
+                connectToWhatsApp();
+            }
+        } else if(connection === 'open') {
+            isReady = true;
+            console.log('Client is ready!');
+            console.log('Bot WhatsApp aman berjalan. Menunggu instruksi dari Pemilik.');
+        }
+    });
+
+    sock.ev.on('messages.upsert', async m => {
+        const msg = m.messages[0];
+        if (!msg.message) return; // Abaikan jika bukan pesan
+        
+        // Ekstrak teks dari pesan biasa atau caption gambar
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+        if (!text) return;
+        
+        const from = msg.key.remoteJid;
+        
+        // Di Baileys, ID Anda sendiri berakhiran @s.whatsapp.net
+        const myId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+        const isSelfChat = msg.key.fromMe || (from === myId);
+        
+        console.log(`[DEBUG] Pesan masuk dari: ${from} | fromMe: ${msg.key.fromMe} | Teks: ${text}`);
+
+        if (ALLOWED_IDS.length === 0 || ALLOWED_IDS[0] === '') {
+            console.log('Peringatan: ALLOWED_IDS belum disetting di Railway!');
+            return;
+        }
+
+        // Cek ID (pastikan support @c.us untuk kompatibilitas lama, dan @s.whatsapp.net untuk format Baileys)
+        const isAllowedSender = ALLOWED_IDS.includes(from) || 
+                                ALLOWED_IDS.includes(from.replace('@s.whatsapp.net', '')) ||
+                                ALLOWED_IDS.includes(from.replace('@c.us', ''));
+
+        if (!isAllowedSender && !isSelfChat) {
+            return;
+        }
+
+        const textLower = text.toLowerCase();
+        if (!textLower.includes('#bank') && !textLower.includes('#tunai') && !textLower.includes('#cash')) {
+            return;
+        }
+
+        const cleanText = text.trim();
+        console.log(`[DITERIMA] Akses Valid! Pesan: ${cleanText}`);
+
+        if (cleanText.toLowerCase().startsWith('pemasukan') || cleanText.toLowerCase().startsWith('pengeluaran') || cleanText.toLowerCase().startsWith('masuk') || cleanText.toLowerCase().startsWith('keluar')) {
+            try {
+                const response = await axios.post(API_URL, { message: cleanText }, {
+                    headers: { 'Authorization': API_TOKEN, 'Content-Type': 'application/json' }
+                });
+
+                if (response.data && response.data.success) {
+                    await sock.sendMessage(from, { text: '✅ ' + response.data.message });
+                }
+            } catch (error) {
+                console.error(error.message);
+                if (error.response && error.response.data && error.response.data.error) {
+                    await sock.sendMessage(from, { text: '❌ Gagal: ' + error.response.data.error });
+                } else {
+                    await sock.sendMessage(from, { text: '❌ Terjadi kesalahan saat menghubungi server aplikasi.' });
+                }
+            }
+        } else {
+            await sock.sendMessage(from, { text: '🤖 Format tidak dikenali atau tidak ada Hashtag #Bank/#Tunai.\n\nGunakan format:\n*Pemasukan/Pengeluaran* [Nominal] [Judul] #[Bank/Tunai]\n\nContoh:\nPengeluaran 20000 Makan Siang #Bank\nPemasukan 50000 Dikasih Ibu #Tunai' });
+        }
+    });
+}
+
+connectToWhatsApp();

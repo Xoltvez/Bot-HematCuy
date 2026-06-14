@@ -6,7 +6,7 @@
     "axios": "^1.17.0",
     "express": "^4.19.2",
     "qrcode": "^1.5.3",
-    "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "github:pedroslopez/whatsapp-web.js#main"
+    "@whiskeysockets/baileys": "^6.7.5",
+    "pino": "^9.0.0"
   }
 }
