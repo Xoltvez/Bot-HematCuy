@@ -74,16 +74,18 @@ client.on('message_create', async msg => {
     console.log(`[DEBUG] Pesan masuk dari: ${msg.from} ke: ${msg.to} | Teks: ${text}`);
 
     // Abaikan jika ALLOWED_IDS kosong (berarti belum disetting di Railway)
-    // atau jika pengirim bukan dari daftar yang diizinkan.
     if (ALLOWED_IDS.length === 0 || ALLOWED_IDS[0] === '') {
         console.log('Peringatan: ALLOWED_IDS belum disetting di Railway!');
         return;
     }
     
-    const senderId = msg.from;
-    // Tambahkan pengecualian jika dia nge-chat nomornya sendiri
-    if (!ALLOWED_IDS.includes(senderId) && msg.to !== msg.from && !ALLOWED_IDS.includes(msg.to)) {
-        return;
+    // CEK KEAMANAN: Bolehkan jika pengirim ada di ALLOWED_IDS, 
+    // ATAU jika dia ngirim pesan ke dirinya sendiri (chat "You")
+    const isAllowedSender = ALLOWED_IDS.includes(msg.from) || ALLOWED_IDS.includes(msg.from.replace('@c.us', ''));
+    const isSelfChat = (msg.to === msg.from);
+    
+    if (!isAllowedSender && !isSelfChat) {
+        return; // Abaikan pesan dari orang tak dikenal
     }
 
     // KEAMANAN LAPIS 1: Penggunaan Hashtag Sumber Dana (#Bank atau #Tunai)
