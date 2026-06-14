@@ -21,7 +21,12 @@ const API_URL = 'https://hematcuy.com/api/bot/transaction';
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: '.wwebjs_auth_v2' }),
     puppeteer: {
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu'
+        ]
     }
 });
 
