@@ -6,7 +6,7 @@
     "axios": "^1.17.0",
     "express": "^4.19.2",
     "qrcode": "^1.5.3",
-    "@whiskeysockets/baileys": "^6.7.5",
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
     "pino": "^9.0.0"
   }
 }
