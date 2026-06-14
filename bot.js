@@ -1,12 +1,36 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
+const qrcodeImg = require('qrcode');
 const axios = require('axios');
 const express = require('express');
 
-// Bikin dummy server untuk Render
+// Bikin server untuk menampilkan QR Code di web
 const app = express();
 const port = process.env.PORT || 10000;
-app.get('/', (req, res) => res.send('Bot is running!'));
+
+let latestQr = '';
+let isReady = false;
+
+app.get('/', async (req, res) => {
+    if (isReady) {
+        res.send('<h1 style="font-family: sans-serif; color: green; text-align: center; margin-top: 50px;">✅ Bot WhatsApp sedang berjalan!</h1>');
+    } else if (latestQr) {
+        try {
+            const url = await qrcodeImg.toDataURL(latestQr);
+            res.send(`
+                <div style="text-align: center; font-family: sans-serif; margin-top: 50px;">
+                    <h1>Scan QR Code WhatsApp</h1>
+                    <p>Buka WhatsApp di HP Anda > Perangkat Tertaut > Tautkan Perangkat</p>
+                    <img src="${url}" alt="QR Code" style="border: 2px solid #ccc; border-radius: 10px; padding: 10px;"/>
+                </div>
+            `);
+        } catch (err) {
+            res.send('Sedang memproses gambar QR...');
+        }
+    } else {
+        res.send('<h1 style="font-family: sans-serif; text-align: center; margin-top: 50px;">⏳ Tunggu sebentar, sedang menyiapkan QR Code... Refresh halaman ini beberapa saat lagi.</h1>');
+    }
+});
 app.listen(port, () => console.log(`Dummy server listening on port ${port}!`));
 
 // KONFIGURASI KEAMANAN
@@ -31,11 +55,15 @@ const client = new Client({
 });
 
 client.on('qr', (qr) => {
-    console.log('Scan QR Code ini dengan WhatsApp Anda:');
+    latestQr = qr;
+    console.log('============= PERHATIAN =============');
+    console.log('Silakan buka alamat Website aplikasi Railway Anda untuk melihat QR Code yang jelas!');
+    console.log('=====================================');
     qrcode.generate(qr, {small: true});
 });
 
 client.on('ready', () => {
+    isReady = true;
     console.log('Client is ready!');
     console.log('Bot WhatsApp aman berjalan. Menunggu instruksi dari Pemilik.');
 });
