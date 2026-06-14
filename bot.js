@@ -1,6 +1,13 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
+const express = require('express');
+
+// Bikin dummy server untuk Render
+const app = express();
+const port = process.env.PORT || 10000;
+app.get('/', (req, res) => res.send('Bot is running!'));
+app.listen(port, () => console.log(`Dummy server listening on port ${port}!`));
 
 // KONFIGURASI KEAMANAN
 const ALLOWED_IDS = [
@@ -12,7 +19,10 @@ const API_TOKEN = 'Bearer RAHASIA_HEMATCUY_123';
 const API_URL = 'https://hematcuy.com/api/bot/transaction';
 
 const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: '.wwebjs_auth_v2' })
+    authStrategy: new LocalAuth({ dataPath: '.wwebjs_auth_v2' }),
+    puppeteer: {
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    }
 });
 
 client.on('qr', (qr) => {
